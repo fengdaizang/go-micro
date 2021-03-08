@@ -1,0 +1,10 @@
+service:
+  server:
+    listenAddr: ":10080"
+    homeDir: "."
+  profiles:
+    active:
+      - local
+logging:
+  level: debug
+  timeFormat: 2006-01-02 15:04:05.000 MST

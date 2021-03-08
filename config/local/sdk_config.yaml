@@ -1,0 +1,214 @@
+name: "config"
+client:
+  organization: spdb-org
+  logging:
+    level: info
+  cryptoconfig:
+    path: ./config/crypto-config
+  credentialStore:
+    path: ./config/crypto-config/spdb-org/users/Admin@spdb-org/
+    cryptoStore:
+      path: ./config/crypto-config/spdb-org/users/Admin@spdb-org/msp
+  BCCSP:
+    security:
+     enabled: true
+     default:
+      provider: GM
+     hashAlgorithm: GMSM3
+     softVerify: true
+     level: 256
+  tlsCerts:
+    systemCertPool: false
+    client:
+      key:
+        path: ./config/crypto-config/spdb-org/users/Admin@spdb-org/tls/client.key
+      cert:
+        path: ./config/crypto-config/spdb-org/users/Admin@spdb-org/tls/client.crt
+
+organizations:
+  spdb-org:
+    mspid: spdb-orgMSP
+    cryptoPath: spdb-org/users/Admin@spdb-org/msp
+    peers:
+      - spdb-org-peer0
+      - spdb-org-peer1
+
+orderers:
+  orderer4:
+    url: grpcs://10.136.68.93:30381
+    grpcOptions:
+      ssl-target-name-override: orderer4
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/orderer/tlsca/tlsca.orderer.pem
+  orderer0:
+    url: grpcs://10.136.68.93:30856
+    grpcOptions:
+      ssl-target-name-override: orderer0
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/orderer/tlsca/tlsca.orderer.pem
+  orderer1:
+    url: grpcs://10.136.68.93:31804
+    grpcOptions:
+      ssl-target-name-override: orderer1
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/orderer/tlsca/tlsca.orderer.pem
+  orderer2:
+    url: grpcs://10.136.68.93:30839
+    grpcOptions:
+      ssl-target-name-override: orderer2
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/orderer/tlsca/tlsca.orderer.pem
+  orderer3:
+    url: grpcs://10.136.68.93:30994
+    grpcOptions:
+      ssl-target-name-override: orderer3
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/orderer/tlsca/tlsca.orderer.pem
+      
+peers:
+  spdb-org-peer0:
+    url: grpcs://10.136.68.93:30046
+    grpcOptions:
+      ssl-target-name-override: spdb-org-peer0
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/spdb-org/peers/peer0/tls/ca.crt
+  spdb-org-peer1:
+    url: grpcs://10.136.68.93:31368
+    grpcOptions:
+      ssl-target-name-override: spdb-org-peer1
+      keep-alive-time: 0s
+      keep-alive-timeout: 20s
+      keep-alive-permit: false
+      fail-fast: false
+      allow-insecure: false
+    tlsCACerts:
+      path: ./config/crypto-config/spdb-org/peers/peer1/tls/ca.crt
+   
+channels:
+  _default:
+    peers:
+      spdb-org-peer0:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+      spdb-org-peer1:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+    policies:
+      queryChannelConfig:
+        minResponses: 1
+        maxTargets: 1
+        retryOpts:
+          attempts: 5
+          initialBackoff: 500ms
+          maxBackoff: 5s
+          backoffFactor: 2.0
+  
+  spdb-st:
+    peers:
+      spdb-org-peer0:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+      spdb-org-peer1:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+    policies:
+      queryChannelConfig:
+        minResponses: 1
+        maxTargets: 1
+        retryOpts:
+          attempts: 5
+          initialBackoff: 500ms
+          maxBackoff: 5s
+          backoffFactor: 2.0
+  
+  manage-channel:
+    peers:
+      spdb-org-peer0:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+      spdb-org-peer1:
+        endorsingPeer: true
+        chaincodeQuery: true
+        ledgerQuery: true
+        eventSource: true
+    policies:
+      queryChannelConfig:
+        minResponses: 1
+        maxTargets: 1
+        retryOpts:
+          attempts: 5
+          initialBackoff: 500ms
+          maxBackoff: 5s
+          backoffFactor: 2.0
+
+entityMatchers:
+  orderer:
+    - pattern: (\w*)orderer4(\w*)
+      urlSubstitutionExp: 10.136.68.93:30381
+      sslTargetOverrideUrlSubstitutionExp: orderer4
+      mappedHost: orderer4
+    - pattern: (\w*)orderer0(\w*)
+      urlSubstitutionExp: 10.136.68.93:30856
+      sslTargetOverrideUrlSubstitutionExp: orderer0
+      mappedHost: orderer0
+    - pattern: (\w*)orderer1(\w*)
+      urlSubstitutionExp: 10.136.68.93:31804
+      sslTargetOverrideUrlSubstitutionExp: orderer1
+      mappedHost: orderer1
+    - pattern: (\w*)orderer2(\w*)
+      urlSubstitutionExp: 10.136.68.93:30839
+      sslTargetOverrideUrlSubstitutionExp: orderer2
+      mappedHost: orderer2
+    - pattern: (\w*)orderer3(\w*)
+      urlSubstitutionExp: 10.136.68.93:30994
+      sslTargetOverrideUrlSubstitutionExp: orderer3
+      mappedHost: orderer3
+  peer:
+    - pattern: (\w*)spdb-org-peer0(\w*)
+      urlSubstitutionExp: 10.136.68.93:30046
+      sslTargetOverrideUrlSubstitutionExp: spdb-org-peer0
+      mappedHost: spdb-org-peer0
+    - pattern: (\w*)spdb-org-peer1(\w*)
+      urlSubstitutionExp: 10.136.68.93:31368
+      sslTargetOverrideUrlSubstitutionExp: spdb-org-peer1
+      mappedHost: spdb-org-peer1
