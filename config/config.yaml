@@ -8,3 +8,6 @@ service:
 logging:
   level: debug
   timeFormat: 2006-01-02 15:04:05.000 MST
+  file:
+    enable: true
+    path: /Users/tanghu/Desktop/com

@@ -31,7 +31,9 @@ func StartAPIServer(name, version string) web.Service {
 		panic(err)
 	}
 
-	err = log.Init(&log.Options{})
+	err = log.Init(&log.Options{
+		ServiceName: name,
+	})
 	if err != nil {
 		panic(err)
 	}

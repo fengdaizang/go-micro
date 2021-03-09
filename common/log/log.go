@@ -5,20 +5,42 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"strings"
+	"path"
 	"sync"
+	"time"
 
-	mlog "github.com/micro/go-micro/util/log"
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
+	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+
+	"tanghu.com/go-micro/common/util"
 )
 
-const (
-	defaultLogLevel   = "ERROR"
-	defaultTimeFormat = "2006-01-02 15:04:05.000 MST"
+// Options defines the log package options.
+type Options struct {
+	ServiceName string
+}
 
-	microLoggerName = "go.micro.internal"
+// loggerParams defines the log package params
+type loggerParams struct {
+	level     logrus.Level
+	formatter *logrus.TextFormatter
+	fileFlag  bool
+	output    io.Writer
+	writer    *rotatelogs.RotateLogs
+}
+
+// moduleFormatter for override Format function
+type moduleFormatter struct {
+	module string
+	*logrus.TextFormatter
+}
+
+const (
+	defaultLogLevel    = "ERROR"
+	defaultTimeFormat  = "2006-01-02 15:04:05.000 MST"
+	defaultServiceName = "go-micro"
 
 	moduleLogKey  = "procMsg"
 	sysIDLogKey   = "sysId"
@@ -33,96 +55,23 @@ const (
 
 var (
 	defaultLogOutput = os.Stderr
-	theLoggerParams  struct {
-		output    io.Writer
-		level     logrus.Level
-		formatter *logrus.TextFormatter
-		once      sync.Once
-		init      bool
-	}
-	loggerCache = map[string]*moduleLogger{}
+	loggerCache      = map[string]*logrus.Logger{}
 
-	serviceName string
+	serviceName      string
+	theLoggerParams  loggerParams
+	loggerParamsOnce sync.Once
 )
 
-type loggerParams struct {
-	output    io.Writer
-	level     logrus.Level
-	formatter logrus.Formatter
-	once      sync.Once
-}
-
-// Options defines the log package options.
-type Options struct {
-	ServiceName string
-}
-
-type moduleLogger struct {
-	module string
-	logger *logrus.Logger
-}
-
-type microLogger struct {
-	logger *logrus.Logger
-}
-
-type moduleFormatter struct {
-	module string
-	*logrus.TextFormatter
-}
-
-// Init initializes the logger.
 func Init(opts *Options) error {
-	serviceName = opts.ServiceName
-	lgr := getLogger(microLoggerName)
-	mlog.SetLogger(&microLogger{lgr})
-
-	initLoggerParams()
-	for _, lg := range loggerCache {
-		lg.logger.SetLevel(theLoggerParams.level)
-		lg.logger.Formatter = wrapFormatter(lg.module, theLoggerParams.formatter)
-		lg.logger.Out = theLoggerParams.output
-	}
-	return nil
-}
-
-func initLoggerParams() error {
-	if theLoggerParams.init {
-		return nil
-	}
-
 	var err error
-	theLoggerParams.once.Do(func() {
-		timeFormat := viper.GetString("logging.timeFormat")
-		if timeFormat == "" {
-			timeFormat = defaultTimeFormat
-		}
-		logLevel := viper.GetString("logging.level")
-		if logLevel == "" {
-			logLevel = defaultLogLevel
-		}
 
-		var (
-			level logrus.Level
-			err   error
-		)
-		level, err = logrus.ParseLevel(logLevel)
-		if err != nil {
-			return
-		}
+	serviceName = opts.ServiceName
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
 
-		theLoggerParams.output = defaultLogOutput
-		theLoggerParams.level = level
-		theLoggerParams.formatter = &logrus.TextFormatter{
-			DisableColors:   true,
-			FullTimestamp:   true,
-			TimestampFormat: timeFormat,
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime: "timeStamp",
-				logrus.FieldKeyMsg:  "message",
-			},
-		}
-		theLoggerParams.init = true
+	loggerParamsOnce.Do(func() {
+		err = initLoggerParams()
 	})
 
 	return err
@@ -130,12 +79,12 @@ func initLoggerParams() error {
 
 // MustGetLogger must get non-nil Logger, otherwise panic
 func MustGetLogger(module string) *logrus.Logger {
-	l := getLogger(module)
-	if l == nil {
+	lg := getLogger(module)
+	if lg == nil {
 		panic("nil logger")
 	}
 
-	return l
+	return lg
 }
 
 // GetLogger try to get a Logger
@@ -143,27 +92,28 @@ func GetLogger(module string) *logrus.Logger {
 	return getLogger(module)
 }
 
-func getLogger(module string) (logger *logrus.Logger) {
+func getLogger(module string) *logrus.Logger {
 	lg, ok := loggerCache[module]
 	if ok {
-		return lg.logger
+		return lg
 	}
 
-	if !theLoggerParams.init {
-		logger = logrus.New()
-		logger.ReportCaller = true
+	moduleFormatter := wrapFormatter(module, theLoggerParams.formatter)
+
+	logger := logrus.New()
+	logger.Level = theLoggerParams.level
+	logger.Formatter = moduleFormatter
+	logger.ReportCaller = true
+
+	if theLoggerParams.fileFlag {
+		logger.AddHook(newLfsHook(theLoggerParams.writer, moduleFormatter))
 	} else {
-		logger = &logrus.Logger{
-			Out:          theLoggerParams.output,
-			Formatter:    wrapFormatter(module, theLoggerParams.formatter),
-			Hooks:        make(logrus.LevelHooks),
-			Level:        theLoggerParams.level,
-			ReportCaller: true,
-		}
+		logger.Out = theLoggerParams.output
 	}
 
-	loggerCache[module] = &moduleLogger{module, logger}
-	return
+	loggerCache[module] = logger
+
+	return logger
 }
 
 func wrapFormatter(module string, formatter *logrus.TextFormatter) *moduleFormatter {
@@ -173,12 +123,103 @@ func wrapFormatter(module string, formatter *logrus.TextFormatter) *moduleFormat
 	}
 }
 
-func (tf *moduleFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	// callpath := 7
-	// if tf.module == microLoggerName {
-	//     callpath = 10
-	// }
+// ===== init logger params begin =====
+func initLoggerParams() error {
+	var (
+		err        error
+		timeFormat string
+		formatter  *logrus.TextFormatter
+		level      logrus.Level
+		writer     *rotatelogs.RotateLogs
+	)
 
+	// timeFormat
+	timeFormat = viper.GetString("logging.timeFormat")
+	if timeFormat == "" {
+		timeFormat = defaultTimeFormat
+	}
+
+	// formatter
+	formatter = &logrus.TextFormatter{
+		DisableColors:   true,
+		FullTimestamp:   true,
+		TimestampFormat: timeFormat,
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyTime: "timeStamp",
+			logrus.FieldKeyMsg:  "message",
+		},
+	}
+
+	// logLevel
+	logLevel := viper.GetString("logging.level")
+	if logLevel == "" {
+		logLevel = defaultLogLevel
+	}
+	level, err = logrus.ParseLevel(logLevel)
+	if err != nil {
+		return err
+	}
+
+	// fileFlag
+	fileFlag := viper.GetBool("logging.file.enable")
+	if fileFlag {
+		filePath := viper.GetString("logging.file.path")
+		if filePath != "" {
+			err = util.CheckFilePath(filePath)
+			if err != nil {
+				return err
+			}
+		}
+		fileName := path.Join(filePath, serviceName)
+		writer, err = rotatelogs.New(
+			// 分割后的文件名称
+			fileName+".%Y%m%d.log",
+
+			// WithLinkName为最新的日志建立软连接，以方便随着找到当前日志文件
+			rotatelogs.WithLinkName(fileName),
+
+			// WithRotationTime设置日志分割的时间，这里设置为一天分割一次
+			rotatelogs.WithRotationTime(24*time.Hour),
+
+			// WithMaxAge和WithRotationCount二者只能设置一个，
+			// WithMaxAge设置文件清理前的最长保存时间，
+			// WithRotationCount设置文件清理前最多保存的个数。
+			rotatelogs.WithMaxAge(7*24*time.Hour),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// theLoggerParams
+	theLoggerParams.level = level
+	theLoggerParams.formatter = formatter
+	theLoggerParams.fileFlag = fileFlag
+	if fileFlag {
+		theLoggerParams.writer = writer
+	} else {
+		theLoggerParams.output = defaultLogOutput
+	}
+
+	return nil
+}
+
+// newLfsHook new a lfsHook for split log file
+func newLfsHook(writer *rotatelogs.RotateLogs, tf *moduleFormatter) logrus.Hook {
+	lfsHook := lfshook.NewHook(lfshook.WriterMap{
+		logrus.DebugLevel: writer,
+		logrus.InfoLevel:  writer,
+		logrus.WarnLevel:  writer,
+		logrus.ErrorLevel: writer,
+		logrus.FatalLevel: writer,
+		logrus.PanicLevel: writer,
+	}, tf)
+
+	return lfsHook
+}
+
+// Format override logrus.TextFormatter.format function
+func (tf *moduleFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	entry.Data[moduleLogKey] = fmt.Sprintf("%s->pid:%d", tf.module, os.Getegid())
 	entry.Data[sysIDLogKey] = viper.GetString("sys.id")
 	entry.Data[sysNameLogKey] = viper.GetString("sys.name")
@@ -339,36 +380,4 @@ func (tf *moduleFormatter) appendValue(b *bytes.Buffer, value interface{}) {
 	}
 
 	b.WriteString(stringVal)
-}
-
-func formatCallpath(calldepth int) string {
-	v := "???"
-	if pc, _, _, ok := runtime.Caller(calldepth + 1); ok {
-		if f := runtime.FuncForPC(pc); f != nil {
-			v = formatFuncName(f.Name())
-		}
-	}
-
-	return v
-}
-
-func formatFuncName(f string) string {
-	i := strings.LastIndex(f, "/")
-	j := strings.Index(f[i+1:], ".")
-	if j < 1 {
-		return "???"
-	}
-	fun := f[i+j+2:]
-
-	i = strings.LastIndex(fun, ".")
-	return fun[i+1:]
-}
-
-// them differently.
-func (l *microLogger) Log(v ...interface{}) {
-	l.logger.Print(v...)
-}
-
-func (l *microLogger) Logf(format string, v ...interface{}) {
-	l.logger.Printf(format, v...)
 }
