@@ -1,9 +1,4 @@
-// Package eureka provides a Eureka registry
 package eureka
-
-/*
-   Eureka is a plugin for Netflix Eureka service discovery
-*/
 
 import (
 	"context"

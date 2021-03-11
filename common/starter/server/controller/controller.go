@@ -31,30 +31,32 @@ type Ctrl interface {
 	Middlewares() []string
 }
 
-var (
-	errDuplicateCtrl = errors.New("Controller exists")
-)
-
 type CtrlList []Ctrl
 
 func (c CtrlList) Len() int           { return len(c) }
 func (c CtrlList) Less(i, j int) bool { return c[i].Name() < c[j].Name() }
 func (c CtrlList) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
 
-var ctrls CtrlList
+var (
+	errDuplicateCtrl = errors.New("Controller exists")
+	ctrls            CtrlList
+)
 
 func RegisterCtrl(ct Ctrl) error {
 	for _, c := range ctrls {
 		if c.Name() == ct.Name() {
 			return errDuplicateCtrl
 		}
+	}
 
-	}
 	if err := checkRouters(ct.Routers()); err != nil {
-		panic(err.Error())
+		return err
 	}
+
 	ctrls = append(ctrls, ct)
+
 	sort.Sort(ctrls)
+
 	return nil
 }
 
@@ -81,5 +83,6 @@ func checkRouters(routers []Router) error {
 			}
 		}
 	}
+
 	return nil
 }

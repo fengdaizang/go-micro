@@ -3,7 +3,6 @@ package log
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"sync"
@@ -27,7 +26,6 @@ type loggerParams struct {
 	level     logrus.Level
 	formatter *logrus.TextFormatter
 	fileFlag  bool
-	output    io.Writer
 	writer    *rotatelogs.RotateLogs
 }
 
@@ -54,14 +52,14 @@ const (
 )
 
 var (
-	defaultLogOutput = os.Stderr
-	loggerCache      = map[string]*logrus.Logger{}
+	loggerCache = map[string]*logrus.Logger{}
 
 	serviceName      string
 	theLoggerParams  loggerParams
 	loggerParamsOnce sync.Once
 )
 
+// Init a logger
 func Init(opts *Options) error {
 	var err error
 
@@ -92,6 +90,7 @@ func GetLogger(module string) *logrus.Logger {
 	return getLogger(module)
 }
 
+// getLogger get a logger by module name
 func getLogger(module string) *logrus.Logger {
 	lg, ok := loggerCache[module]
 	if ok {
@@ -107,8 +106,6 @@ func getLogger(module string) *logrus.Logger {
 
 	if theLoggerParams.fileFlag {
 		logger.AddHook(newLfsHook(theLoggerParams.writer, moduleFormatter))
-	} else {
-		logger.Out = theLoggerParams.output
 	}
 
 	loggerCache[module] = logger
@@ -116,6 +113,7 @@ func getLogger(module string) *logrus.Logger {
 	return logger
 }
 
+// wrapFormatter get a moduleFormatter to replace logrus.TextFormatter
 func wrapFormatter(module string, formatter *logrus.TextFormatter) *moduleFormatter {
 	return &moduleFormatter{
 		module:        module,
@@ -123,7 +121,7 @@ func wrapFormatter(module string, formatter *logrus.TextFormatter) *moduleFormat
 	}
 }
 
-// ===== init logger params begin =====
+// initLoggerParams init logger params
 func initLoggerParams() error {
 	var (
 		err        error
@@ -162,6 +160,12 @@ func initLoggerParams() error {
 
 	// fileFlag
 	fileFlag := viper.GetBool("logging.file.enable")
+
+	// theLoggerParams
+	theLoggerParams.level = level
+	theLoggerParams.formatter = formatter
+	theLoggerParams.fileFlag = fileFlag
+
 	if fileFlag {
 		filePath := viper.GetString("logging.file.path")
 		if filePath != "" {
@@ -179,6 +183,7 @@ func initLoggerParams() error {
 			rotatelogs.WithLinkName(fileName),
 
 			// WithRotationTime设置日志分割的时间，这里设置为一天分割一次
+			// WithRotationSize设置日志分割的大小
 			rotatelogs.WithRotationTime(24*time.Hour),
 
 			// WithMaxAge和WithRotationCount二者只能设置一个，
@@ -189,16 +194,8 @@ func initLoggerParams() error {
 		if err != nil {
 			return err
 		}
-	}
 
-	// theLoggerParams
-	theLoggerParams.level = level
-	theLoggerParams.formatter = formatter
-	theLoggerParams.fileFlag = fileFlag
-	if fileFlag {
 		theLoggerParams.writer = writer
-	} else {
-		theLoggerParams.output = defaultLogOutput
 	}
 
 	return nil
@@ -316,6 +313,7 @@ func (tf *moduleFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// resolve if there are custom fields use custom fields, if not, is the default fields
 func resolve(f logrus.FieldMap, key string) string {
 	for k, v := range f {
 		if string(k) == key {
