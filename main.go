@@ -14,7 +14,5 @@ func main() {
 	server.InitGinServer(r)
 	webService.Handle("/", r)
 
-	// do something
-
 	webService.Run()
 }

@@ -27,6 +27,7 @@ type loggerParams struct {
 	formatter *logrus.TextFormatter
 	fileFlag  bool
 	writer    *rotatelogs.RotateLogs
+	init      bool
 }
 
 // moduleFormatter for override Format function
@@ -72,6 +73,18 @@ func Init(opts *Options) error {
 		err = initLoggerParams()
 	})
 
+	for module, logger := range loggerCache {
+		moduleFormatter := wrapFormatter(module, theLoggerParams.formatter)
+
+		logger.Level = theLoggerParams.level
+		logger.Formatter = moduleFormatter
+		logger.ReportCaller = true
+
+		if theLoggerParams.fileFlag {
+			logger.AddHook(newLfsHook(theLoggerParams.writer, moduleFormatter))
+		}
+	}
+
 	return err
 }
 
@@ -97,15 +110,21 @@ func getLogger(module string) *logrus.Logger {
 		return lg
 	}
 
-	moduleFormatter := wrapFormatter(module, theLoggerParams.formatter)
+	var logger *logrus.Logger
+	if !theLoggerParams.init {
+		logger = logrus.New()
+		logger.ReportCaller = true
+	} else {
+		moduleFormatter := wrapFormatter(module, theLoggerParams.formatter)
 
-	logger := logrus.New()
-	logger.Level = theLoggerParams.level
-	logger.Formatter = moduleFormatter
-	logger.ReportCaller = true
+		logger = logrus.New()
+		logger.Level = theLoggerParams.level
+		logger.Formatter = moduleFormatter
+		logger.ReportCaller = true
 
-	if theLoggerParams.fileFlag {
-		logger.AddHook(newLfsHook(theLoggerParams.writer, moduleFormatter))
+		if theLoggerParams.fileFlag {
+			logger.AddHook(newLfsHook(theLoggerParams.writer, moduleFormatter))
+		}
 	}
 
 	loggerCache[module] = logger
@@ -165,6 +184,7 @@ func initLoggerParams() error {
 	theLoggerParams.level = level
 	theLoggerParams.formatter = formatter
 	theLoggerParams.fileFlag = fileFlag
+	theLoggerParams.init = true
 
 	if fileFlag {
 		filePath := viper.GetString("logging.file.path")

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/gin-gonic/gin"
@@ -42,4 +44,28 @@ func orderMiddleware(ms []middleware.Middleware) []middleware.Middleware {
 	res := middleware.MiddlewareList(ms)
 	sort.Sort(res)
 	return res
+}
+
+
+func checkRouters(routers []controller.Router) error {
+	// check router path/method
+	for i := 0; i < len(routers); i++ {
+		for j := i + 1; j < len(routers); j++ {
+			if routers[i].Path == routers[j].Path && routers[i].Method == routers[j].Method {
+				return errors.New(fmt.Sprintf("routerPath[%s]'s method[%s] exists", routers[i].Path, routers[j].Method))
+			}
+		}
+	}
+
+	// check router middleware
+	ms := middleware.Middlewares()
+	for _, c := range routers {
+		for _, mName := range c.Middlewares {
+			if _, ok := ms[mName]; !ok {
+				return errors.New(fmt.Sprintf("router[%s]'s middleware[%s] not exists", c.Path, mName))
+			}
+		}
+	}
+
+	return nil
 }

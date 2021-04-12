@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/micro/go-micro/registry"
 	"github.com/micro/go-micro/web"
 	"github.com/spf13/viper"
 
@@ -49,7 +48,6 @@ func initConfig(name string) error {
 	configOpts := &config.Options{
 		EnvVarEnabled: true,
 		EnvVarPrefix:  envVarPrefix,
-
 		ConfigFileName: configFileName,
 	}
 
@@ -58,20 +56,18 @@ func initConfig(name string) error {
 
 func createAPIService(name, version string) web.Service {
 	theWebServiceOnce.Do(func() {
-		var regis registry.Registry
 		// Generated the service name based the WebServiceNameFormat
 		serviceName := generateServiceName(name, version)
-
-		enable := viper.GetBool("registry.enable")
-		if enable {
-			regis = register.GetRegistry()
-		}
 
 		serviceOpts := []web.Option{
 			web.Name(serviceName),
 			web.Address(getServiceListenAddr()),
-			// web.WrapHandler(handler.MiddlewareList()...),
-			web.Registry(regis),
+		}
+
+		enable := viper.GetBool("registry.enable")
+		if enable {
+			regis := register.GetRegistry()
+			serviceOpts = append(serviceOpts, web.Registry(regis))
 		}
 
 		service := web.NewService(serviceOpts...)
